@@ -1,114 +1,156 @@
-import {
-	Editor,
-	MarkdownView,
-	MarkdownFileInfo,
-	Modal,
-	Notice,
-	Plugin,
-} from 'obsidian';
-import {
-	DEFAULT_SETTINGS,
-	MyPluginSettings,
-	SampleSettingTab,
-} from './settings';
+import { moment, Plugin, TFile, MarkdownView } from 'obsidian';
+import { DailyLettersSettings, DEFAULT_SETTINGS, DailyLettersSettingTab } from './settings';
+import { countWords, countCols, makeSeparator, buildRow } from './utils';
+export { countCols, makeSeparator };
 
-// Remember to rename these classes and interfaces!
-
-export default class MyPlugin extends Plugin {
-	settings!: MyPluginSettings;
-
-	async onload() {
-		await this.loadSettings();
-
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (_evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			},
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (
-				editor: Editor,
-				_ctx: MarkdownView | MarkdownFileInfo,
-			) => {
-				editor.replaceSelection('Sample editor command');
-			},
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView =
-					this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			},
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(activeDocument, 'click', (_evt: MouseEvent) => {
-			new Notice('Click');
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(
-			window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000),
-		);
-	}
-
-	onunload() {}
-
-	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<MyPluginSettings>,
-		);
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
+interface DayData {
+	date: string;       // YYYY-MM-DD
+	wordsToday: number;
 }
 
-class SampleModal extends Modal {
-	onOpen() {
-		const { contentEl } = this;
-		contentEl.setText('Woah!');
+interface PersistedData {
+	settings: DailyLettersSettings;
+	today: DayData;
+}
+
+export default class DailyLettersPlugin extends Plugin {
+	settings!: DailyLettersSettings;
+	today!: DayData;
+	statusBarItem!: HTMLElement;
+
+	private fileWordCounts = new Map<string, number>();
+	private saveDebounce: ReturnType<typeof setTimeout> | null = null;
+	private settingsDebounce: ReturnType<typeof setTimeout> | null = null;
+
+	async onload() {
+		const saved = await this.loadData() as PersistedData | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved?.settings);
+		this.today = Object.assign({ date: '', wordsToday: 0 }, saved?.today);
+
+		// Initialize today's date immediately so upserts always have a valid date
+		this.handleDayRollover();
+
+		this.statusBarItem = this.addStatusBarItem();
+		this.updateStatusBar();
+
+		this.app.workspace.iterateAllLeaves((leaf) => {
+			const view = leaf.view;
+			if (view instanceof MarkdownView && view.file) {
+				this.fileWordCounts.set(view.file.path, countWords(view.editor.getValue()));
+			}
+		});
+
+		this.registerEvent(
+			this.app.workspace.on('editor-change', (editor, view) => {
+				if (!(view instanceof MarkdownView) || !view.file) return;
+
+				this.handleDayRollover();
+
+				const path = view.file.path;
+				const current = countWords(editor.getValue());
+				const previous = this.fileWordCounts.get(path) ?? current;
+				const delta = current - previous;
+
+				this.fileWordCounts.set(path, current);
+
+				if (delta > 0) {
+					this.today.wordsToday += delta;
+					this.updateStatusBar();
+					this.debouncedSave();
+				}
+			})
+		);
+
+		this.registerEvent(
+			this.app.workspace.on('active-leaf-change', (leaf) => {
+				if (!leaf) return;
+				const view = leaf.view;
+				if (view instanceof MarkdownView && view.file) {
+					const path = view.file.path;
+					if (!this.fileWordCounts.has(path)) {
+						this.fileWordCounts.set(path, countWords(view.editor.getValue()));
+					}
+				}
+			})
+		);
+
+		this.addSettingTab(new DailyLettersSettingTab(this.app, this));
 	}
 
-	onClose() {
-		const { contentEl } = this;
-		contentEl.empty();
+	onunload() {
+		if (this.saveDebounce) clearTimeout(this.saveDebounce);
+		if (this.settingsDebounce) clearTimeout(this.settingsDebounce);
+	}
+
+	debouncedPersistSettings() {
+		if (this.settingsDebounce) clearTimeout(this.settingsDebounce);
+		this.settingsDebounce = setTimeout(() => this.persist(), 1000);
+	}
+
+	private handleDayRollover() {
+		const todayStr = moment().format('YYYY-MM-DD');
+		if (this.today.date === todayStr) return;
+		this.today = { date: todayStr, wordsToday: 0 };
+		this.updateStatusBar();
+	}
+
+	async upsertLogEntry() {
+		const path = this.settings.trackingFile;
+		if (!path || !this.today.date) return;
+
+		const { date, wordsToday } = this.today;
+		const goal = this.settings.dailyGoal;
+		const row = buildRow(
+			this.settings.rowFormat,
+			date, wordsToday, goal,
+			this.settings.successToken,
+			this.settings.failedToken,
+		);
+		const headerRow = this.settings.headerFormat;
+		const separator = makeSeparator(headerRow);
+		const header = `# Daily Letters Log\n\n${headerRow}\n${separator}\n`;
+
+		const existing = this.app.vault.getAbstractFileByPath(path);
+		if (existing instanceof TFile) {
+			let content = await this.app.vault.read(existing);
+
+			// Ensure header exists
+			if (!content.includes(this.settings.headerFormat)) {
+				content = header + (content.trim() ? content.trim() + '\n' : '');
+			}
+
+			const lines = content.split('\n');
+			const idx = lines.findIndex((l) => l.startsWith(`| ${date}`));
+			if (idx !== -1) {
+				lines[idx] = row;
+				await this.app.vault.modify(existing, lines.join('\n'));
+			} else {
+				const appended = content.endsWith('\n') ? content + row + '\n' : content + '\n' + row + '\n';
+				await this.app.vault.modify(existing, appended);
+			}
+		} else {
+			await this.app.vault.create(path, header + row + '\n');
+		}
+	}
+
+	updateStatusBar() {
+		const remaining = this.settings.dailyGoal - this.today.wordsToday;
+		if (remaining <= 0) {
+			this.statusBarItem.setText('✓ done');
+			this.statusBarItem.style.color = 'var(--color-green)';
+		} else {
+			this.statusBarItem.setText(`${remaining} words left`);
+			this.statusBarItem.style.color = '';
+		}
+	}
+
+	private debouncedSave() {
+		if (this.saveDebounce) clearTimeout(this.saveDebounce);
+		this.saveDebounce = setTimeout(() => this.persist(), 2000);
+	}
+
+	async persist() {
+		await this.saveData({ settings: this.settings, today: this.today } as PersistedData);
+		await this.upsertLogEntry();
 	}
 }

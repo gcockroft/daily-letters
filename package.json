@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "daily-letters",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "Daily word count goal tracker for Obsidian",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

@@ -108,7 +108,7 @@ export default class DailyLettersPlugin extends Plugin {
 		);
 		const headerRow = this.settings.headerFormat;
 		const separator = makeSeparator(headerRow);
-		const header = `# Daily Letters Log\n\n${headerRow}\n${separator}\n`;
+		const header = `${headerRow}\n${separator}\n`;
 
 		const existing = this.app.vault.getAbstractFileByPath(path);
 		if (existing instanceof TFile) {

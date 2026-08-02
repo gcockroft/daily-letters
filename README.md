@@ -1,92 +1,69 @@
-# Obsidian Sample Plugin
+# Daily Letters
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+An Obsidian plugin for building a daily writing habit. Set a word goal, watch the countdown in the status bar, and let every day log itself automatically.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+## Features
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
+- **Status bar countdown** — shows words remaining for the day; turns green when your goal is met
+- **Automatic daily logging** — writes (and live-updates) a row in your chosen log file as you type, so the log is always current
+- **Configurable table format** — customise the header, row template, and success/fail tokens to fit your vault's style
+- **Works across all files** — counts words from any markdown file you edit in the vault
 
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and outputs a Notice on click.
-- Registers a global interval which logs 'setInterval' to the console.
+## How it works
 
-## First time developing plugins?
+The plugin tracks the net word delta across every editor change. Words added count up; the counter resets at midnight on your first keystroke of the new day. Progress is written to your log file automatically — no manual action needed.
 
-Quick starting guide for new plugin devs:
+## Settings
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `src/main.ts` to `main.js`.
-- Make changes to `src/main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+| Setting | Description | Default |
+|---|---|---|
+| Daily word goal | Words to write before the status bar turns green | `500` |
+| Tracking file | Vault-relative path to the log file (created automatically) | — |
+| Header format | Column headers for the markdown table | `\| Date \| Words \| Goal \| Met \|` |
+| Row format | Row template — tokens: `{date}` `{words}` `{goal}` `{status}` | `\| {date} \| {words} \| {goal} \| {status} \|` |
+| Success token | Replaces `{status}` when goal is met | `🟢` |
+| Failed token | Replaces `{status}` when goal is not met | `🔴` |
 
-## Releasing new releases
+The header and row format must have the same number of `|`-delimited columns — the settings page shows an error if they don't match.
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+### Log file format
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+The plugin writes a plain markdown table to whatever file you specify. Example with defaults:
 
-## Adding your plugin to the community plugin list
-
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
-
-## How to use
-
-- Clone this repo.
-- Make sure your NodeJS is at least v18 (`node --version`).
-- `npm i` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
-
-## Manually installing the plugin
-
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
-
-## Improve code quality with eslint
-
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code.
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-	"fundingUrl": "https://buymeacoffee.com"
-}
+```
+| Date       | Words | Goal | Met |
+| ---------- | ----- | ---- | --- |
+| 2026-08-01 | 523   | 500  | 🟢  |
+| 2026-08-02 | 210   | 500  | 🔴  |
 ```
 
-If you have multiple URLs, you can also do:
+The file is created automatically if it doesn't exist. You can open it, rename it, move it — just update the path in settings.
 
-```json
-{
-	"fundingUrl": {
-		"Buy Me a Coffee": "https://buymeacoffee.com",
-		"GitHub Sponsor": "https://github.com/sponsors",
-		"Patreon": "https://www.patreon.com/"
-	}
-}
+## Installation
+
+### Community plugins (recommended)
+
+Search for **Daily Letters** in Settings → Community plugins.
+
+### Manual
+
+1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](../../releases/latest)
+2. Copy them to `<vault>/.obsidian/plugins/daily-letters/`
+3. Enable the plugin in Settings → Community plugins
+
+### BRAT (beta)
+
+Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) and add this repo URL.
+
+## Development
+
+```bash
+git clone https://github.com/gcockroft534/daily-letters
+cd daily-letters
+npm install
+npm run dev     # watch mode
+npm test        # run unit tests
+npm run build   # production build
 ```
 
-## API Documentation
-
-See https://docs.obsidian.md
+Symlink or copy the build output into your vault's `.obsidian/plugins/daily-letters/` folder, then enable the plugin.

@@ -114,8 +114,10 @@ export default class DailyLettersPlugin extends Plugin {
 		if (existing instanceof TFile) {
 			let content = await this.app.vault.read(existing);
 
-			// Ensure header exists
-			if (!content.includes(this.settings.headerFormat)) {
+			// Ensure header exists — check for a separator row rather than the exact
+			// header string, since Obsidian's table formatter may repad column widths
+			const hasSeparator = content.split('\n').some(l => /^\|[-| :]+\|/.test(l));
+			if (!hasSeparator) {
 				content = header + (content.trim() ? content.trim() + '\n' : '');
 			}
 

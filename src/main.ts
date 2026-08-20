@@ -27,10 +27,10 @@ export default class DailyLettersPlugin extends Plugin {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved?.settings);
 		this.today = Object.assign({ date: '', wordsToday: 0 }, saved?.today);
 
+		this.statusBarItem = this.addStatusBarItem();
+
 		// Initialize today's date immediately so upserts always have a valid date
 		this.handleDayRollover();
-
-		this.statusBarItem = this.addStatusBarItem();
 		this.updateStatusBar();
 
 		this.app.workspace.iterateAllLeaves((leaf) => {

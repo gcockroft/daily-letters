@@ -4,6 +4,7 @@ import DailyLettersPlugin, { countCols, makeSeparator } from './main';
 export interface DailyLettersSettings {
 	dailyGoal: number;
 	trackingFile: string;
+	excludePatterns: string;
 	headerFormat: string;
 	rowFormat: string;
 	successToken: string;
@@ -13,6 +14,7 @@ export interface DailyLettersSettings {
 export const DEFAULT_SETTINGS: DailyLettersSettings = {
 	dailyGoal: 500,
 	trackingFile: '',
+	excludePatterns: '',
 	headerFormat: '| Date | Words | Goal | Met |',
 	rowFormat: '| {date} | {words} | {goal} | {status} |',
 	successToken: '🟢',
@@ -67,7 +69,8 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 				.replace('{date}', '2026-08-01')
 				.replace('{words}', '523')
 				.replace('{goal}', String(this.plugin.settings.dailyGoal))
-				.replace('{status}', this.plugin.settings.successToken);
+				.replace('{status}', this.plugin.settings.successToken)
+				.replace('{files}', '[[note1]], [[note2]]');
 			const sep = makeSeparator(this.plugin.settings.headerFormat);
 			previewCode.textContent =
 				this.plugin.settings.headerFormat + '\n' +
@@ -112,6 +115,20 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 					.onChange(saveTrackingFile);
 			});
 
+		// Exclude patterns
+		new Setting(containerEl)
+			.setName('Exclude patterns')
+			.setDesc('Comma-separated regex patterns. Files whose path matches any pattern are ignored. E.g. templates/,\\.excalidraw$')
+			.addText((text) =>
+				text
+					.setPlaceholder('templates/,daily-log')
+					.setValue(this.plugin.settings.excludePatterns)
+					.onChange((value) => {
+						this.plugin.settings.excludePatterns = value;
+						this.plugin.debouncedPersistSettings();
+					})
+			);
+
 		// Format section
 		new Setting(containerEl).setName('Log format').setHeading();
 
@@ -150,7 +167,7 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 		// Row format
 		new Setting(containerEl)
 			.setName('Row format')
-			.setDesc('Row template. Available tokens: {date} {words} {goal} {status}')
+			.setDesc('Row template. Available tokens: {date} {words} {goal} {status} {files}')
 			.addText((text) =>
 				text
 					.setPlaceholder('| {date} | {words} | {goal} | {status} |')

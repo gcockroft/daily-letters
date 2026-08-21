@@ -1,11 +1,12 @@
 import { moment, Plugin, TFile, MarkdownView } from 'obsidian';
 import { DailyLettersSettings, DEFAULT_SETTINGS, DailyLettersSettingTab } from './settings';
-import { countWords, countCols, makeSeparator, buildRow } from './utils';
+import { countWords, countCols, makeSeparator, buildRow, isExcluded, formatNotes } from './utils';
 export { countCols, makeSeparator };
 
 interface DayData {
 	date: string;       // YYYY-MM-DD
 	wordsToday: number;
+	editedFiles: string[];
 }
 
 interface PersistedData {
@@ -19,13 +20,15 @@ export default class DailyLettersPlugin extends Plugin {
 	statusBarItem!: HTMLElement;
 
 	private fileWordCounts = new Map<string, number>();
+	private editedFilesSet = new Set<string>();
 	private saveDebounce: number | null = null;
 	private settingsDebounce: number | null = null;
 
 	async onload() {
 		const saved = await this.loadData() as PersistedData | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved?.settings);
-		this.today = Object.assign({ date: '', wordsToday: 0 }, saved?.today);
+		this.today = Object.assign({ date: '', wordsToday: 0, editedFiles: [] }, saved?.today);
+		this.editedFilesSet = new Set(this.today.editedFiles);
 
 		this.statusBarItem = this.addStatusBarItem();
 
@@ -43,6 +46,7 @@ export default class DailyLettersPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('editor-change', (editor, view) => {
 				if (!(view instanceof MarkdownView) || !view.file) return;
+				if (isExcluded(view.file.path, this.settings.excludePatterns)) return;
 
 				this.handleDayRollover();
 
@@ -55,6 +59,10 @@ export default class DailyLettersPlugin extends Plugin {
 
 				if (delta > 0) {
 					this.today.wordsToday += delta;
+					if (!this.editedFilesSet.has(path) && path !== this.settings.trackingFile) {
+						this.editedFilesSet.add(path);
+						this.today.editedFiles = [...this.editedFilesSet];
+					}
 					this.updateStatusBar();
 					this.debouncedSave();
 				}
@@ -66,6 +74,7 @@ export default class DailyLettersPlugin extends Plugin {
 				if (!leaf) return;
 				const view = leaf.view;
 				if (view instanceof MarkdownView && view.file) {
+					if (isExcluded(view.file.path, this.settings.excludePatterns)) return;
 					const path = view.file.path;
 					if (!this.fileWordCounts.has(path)) {
 						this.fileWordCounts.set(path, countWords(view.editor.getValue()));
@@ -90,7 +99,8 @@ export default class DailyLettersPlugin extends Plugin {
 	private handleDayRollover() {
 		const todayStr = moment().format('YYYY-MM-DD');
 		if (this.today.date === todayStr) return;
-		this.today = { date: todayStr, wordsToday: 0 };
+		this.today = { date: todayStr, wordsToday: 0, editedFiles: [] };
+		this.editedFilesSet.clear();
 		this.updateStatusBar();
 	}
 
@@ -98,13 +108,15 @@ export default class DailyLettersPlugin extends Plugin {
 		const path = this.settings.trackingFile;
 		if (!path || !this.today.date) return;
 
-		const { date, wordsToday } = this.today;
+		const { date, wordsToday, editedFiles } = this.today;
 		const goal = this.settings.dailyGoal;
+		const notes = formatNotes(editedFiles);
 		const row = buildRow(
 			this.settings.rowFormat,
 			date, wordsToday, goal,
 			this.settings.successToken,
 			this.settings.failedToken,
+			notes,
 		);
 		const headerRow = this.settings.headerFormat;
 		const separator = makeSeparator(headerRow);

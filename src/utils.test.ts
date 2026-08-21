@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countWords, countCols, makeSeparator, columnsMatch, buildRow } from './utils';
+import { countWords, countCols, makeSeparator, columnsMatch, buildRow, isExcluded, formatNotes } from './utils';
 
 describe('countWords', () => {
 	it('counts words in normal prose', () => {
@@ -55,6 +55,46 @@ describe('columnsMatch', () => {
 	});
 });
 
+describe('isExcluded', () => {
+	it('returns false for empty patterns', () => {
+		expect(isExcluded('notes/hello.md', '')).toBe(false);
+	});
+	it('returns false for whitespace-only patterns', () => {
+		expect(isExcluded('notes/hello.md', '  , , ')).toBe(false);
+	});
+	it('matches a simple substring pattern', () => {
+		expect(isExcluded('templates/meeting.md', 'templates/')).toBe(true);
+	});
+	it('does not match unrelated paths', () => {
+		expect(isExcluded('notes/hello.md', 'templates/')).toBe(false);
+	});
+	it('supports multiple comma-separated patterns', () => {
+		expect(isExcluded('daily/log.md', 'templates/,daily/')).toBe(true);
+	});
+	it('supports regex anchors', () => {
+		expect(isExcluded('foo.excalidraw.md', '\\.excalidraw')).toBe(true);
+		expect(isExcluded('notes/excalidraw-ref.md', '^excalidraw')).toBe(false);
+	});
+	it('silently ignores invalid regex', () => {
+		expect(isExcluded('notes/hello.md', '[invalid')).toBe(false);
+	});
+});
+
+describe('formatNotes', () => {
+	it('returns empty string for no paths', () => {
+		expect(formatNotes([])).toBe('');
+	});
+	it('formats a single path as wiki-link without .md', () => {
+		expect(formatNotes(['notes/hello.md'])).toBe('[[notes/hello]]');
+	});
+	it('formats multiple paths as comma-separated wiki-links', () => {
+		expect(formatNotes(['a.md', 'folder/b.md'])).toBe('[[a]], [[folder/b]]');
+	});
+	it('leaves paths without .md extension unchanged', () => {
+		expect(formatNotes(['canvas.canvas'])).toBe('[[canvas.canvas]]');
+	});
+});
+
 describe('buildRow', () => {
 	const header = '| Date | Words | Goal | Met |';
 	const rowFormat = '| {date} | {words} | {goal} | {status} |';
@@ -83,6 +123,20 @@ describe('buildRow', () => {
 		const custom = '| {date} | {status} | {words}/{goal} |';
 		const row = buildRow(custom, '2026-08-01', 300, 500, '🟢', '🔴');
 		expect(row).toBe('| 2026-08-01 | 🔴 | 300/500 |');
+	});
+	it('substitutes {files} token when provided', () => {
+		const withFiles = '| {date} | {words} | {goal} | {status} | {files} |';
+		const row = buildRow(withFiles, '2026-08-01', 500, 500, '🟢', '🔴', '[[a]], [[b]]');
+		expect(row).toBe('| 2026-08-01 | 500 | 500 | 🟢 | [[a]], [[b]] |');
+	});
+	it('renders empty {files} when no files edited', () => {
+		const withFiles = '| {date} | {words} | {files} |';
+		const row = buildRow(withFiles, '2026-08-01', 100, 500, '🟢', '🔴', '');
+		expect(row).toBe('| 2026-08-01 | 100 |  |');
+	});
+	it('leaves row unchanged when {files} token is absent', () => {
+		const row = buildRow(rowFormat, '2026-08-01', 500, 500, '🟢', '🔴', '[[a]]');
+		expect(row).toBe('| 2026-08-01 | 500 | 500 | 🟢 |');
 	});
 	it('validates row against header column count', () => {
 		// Sanity: default header and row should always match

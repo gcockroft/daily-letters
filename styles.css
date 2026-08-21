@@ -1,8 +1,12 @@
-/*
+.daily-letters-done {
+	color: var(--color-green);
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.daily-letters-error {
+	color: var(--color-red);
+	display: none;
+}
 
-If your plugin does not need CSS, delete this file.
-
-*/
+.daily-letters-error.mod-visible {
+	display: block;
+}

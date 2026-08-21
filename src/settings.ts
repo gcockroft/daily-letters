@@ -55,11 +55,10 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-		containerEl.createEl('h2', { text: 'Daily Letters' });
 
 		// Live preview
-		const preview = containerEl.createEl('div', { cls: 'daily-letters-preview' });
-		preview.createEl('p', { text: 'Logs your daily word count to a markdown table:' });
+		const preview = containerEl.createDiv({ cls: 'daily-letters-preview' });
+		preview.createEl('p', { text: 'Logs your daily word count to a Markdown table:' });
 		const pre = preview.createEl('pre');
 		const previewCode = pre.createEl('code');
 
@@ -114,7 +113,7 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 			});
 
 		// Format section
-		containerEl.createEl('h3', { text: 'Log format' });
+		new Setting(containerEl).setName('Log format').setHeading();
 
 		// validate declared before header field, assigned after errorEl is created
 		// (safe because onChange only fires at runtime, after display() completes)
@@ -140,13 +139,11 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 			text: 'Header and row format must have the same number of | columns.',
 			cls: 'daily-letters-error',
 		});
-		errorEl.style.color = 'var(--color-red)';
-		errorEl.style.display = 'none';
 
 		validate = (): boolean => {
 			const valid = countCols(this.plugin.settings.headerFormat) ===
 				countCols(this.plugin.settings.rowFormat);
-			errorEl.style.display = valid ? 'none' : 'block';
+			errorEl.toggleClass('mod-visible', !valid);
 			return valid;
 		};
 

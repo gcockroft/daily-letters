@@ -2,7 +2,7 @@
 	"id": "daily-letters",
 	"name": "Daily Letters",
 	"version": "1.0.0",
-	"minAppVersion": "1.0.0",
+	"minAppVersion": "1.4.10",
 	"description": "Set up and track a daily writing goal. Configure a log file destination and format. The log auto-updates as you write.",
 	"author": "Gareth Cockroft",
 	"authorUrl": "https://github.com/gcockroft",

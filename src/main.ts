@@ -19,8 +19,8 @@ export default class DailyLettersPlugin extends Plugin {
 	statusBarItem!: HTMLElement;
 
 	private fileWordCounts = new Map<string, number>();
-	private saveDebounce: ReturnType<typeof setTimeout> | null = null;
-	private settingsDebounce: ReturnType<typeof setTimeout> | null = null;
+	private saveDebounce: number | null = null;
+	private settingsDebounce: number | null = null;
 
 	async onload() {
 		const saved = await this.loadData() as PersistedData | null;
@@ -78,13 +78,13 @@ export default class DailyLettersPlugin extends Plugin {
 	}
 
 	onunload() {
-		if (this.saveDebounce) clearTimeout(this.saveDebounce);
-		if (this.settingsDebounce) clearTimeout(this.settingsDebounce);
+		if (this.saveDebounce) window.clearTimeout(this.saveDebounce);
+		if (this.settingsDebounce) window.clearTimeout(this.settingsDebounce);
 	}
 
 	debouncedPersistSettings() {
-		if (this.settingsDebounce) clearTimeout(this.settingsDebounce);
-		this.settingsDebounce = setTimeout(() => this.persist(), 1000);
+		if (this.settingsDebounce) window.clearTimeout(this.settingsDebounce);
+		this.settingsDebounce = window.setTimeout(() => { void this.persist(); }, 1000);
 	}
 
 	private handleDayRollover() {
@@ -139,20 +139,20 @@ export default class DailyLettersPlugin extends Plugin {
 		const remaining = this.settings.dailyGoal - this.today.wordsToday;
 		if (remaining <= 0) {
 			this.statusBarItem.setText('✓ done');
-			this.statusBarItem.style.color = 'var(--color-green)';
+			this.statusBarItem.addClass('daily-letters-done');
 		} else {
 			this.statusBarItem.setText(`${remaining} words left`);
-			this.statusBarItem.style.color = '';
+			this.statusBarItem.removeClass('daily-letters-done');
 		}
 	}
 
 	private debouncedSave() {
-		if (this.saveDebounce) clearTimeout(this.saveDebounce);
-		this.saveDebounce = setTimeout(() => this.persist(), 2000);
+		if (this.saveDebounce) window.clearTimeout(this.saveDebounce);
+		this.saveDebounce = window.setTimeout(() => { void this.persist(); }, 2000);
 	}
 
 	async persist() {
-		await this.saveData({ settings: this.settings, today: this.today } as PersistedData);
+		await this.saveData({ settings: this.settings, today: this.today });
 		await this.upsertLogEntry();
 	}
 }

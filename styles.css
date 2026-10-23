@@ -10,3 +10,7 @@
 .daily-letters-error.mod-visible {
 	display: block;
 }
+
+.daily-letters-invalid {
+	border-color: var(--color-red);
+}

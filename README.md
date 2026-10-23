@@ -11,7 +11,9 @@ An Obsidian plugin for building a daily writing habit. Set a word goal, watch th
 
 ## How it works
 
-The plugin tracks the net word delta across every editor change. Words added count up; the counter resets at midnight on your first keystroke of the new day. Progress is written to your log file automatically — no manual action needed.
+The plugin counts words you add in any markdown editor. Deleting words never subtracts, so the count is the total you typed that day: retyping a deleted sentence, or cutting and pasting text, counts again. When you open a file, its first edit sets a baseline and earns nothing, so text already in the file (or synced in from another device while it was closed) is never credited.
+
+The counter resets at midnight, and the finished day's row is written to the log. Progress is written to your log file a couple of seconds after you stop typing — no manual action needed. Edits to the log file itself and to excluded files are not counted.
 
 ## Settings
 
@@ -20,7 +22,8 @@ The plugin tracks the net word delta across every editor change. Words added cou
 | Daily word goal | Words to write before the status bar turns green | `500` |
 | Tracking file | Vault-relative path to the log file (created automatically) | — |
 | Header format | Column headers for the markdown table | `\| Date \| Words \| Goal \| Met \|` |
-| Row format | Row template — tokens: `{date}` `{words}` `{goal}` `{status}` | `\| {date} \| {words} \| {goal} \| {status} \|` |
+| Exclude patterns | Comma-separated regexes; matching file paths are not counted | — |
+| Row format | Row template — tokens: `{date}` `{words}` `{goal}` `{status}` `{files}`. Must include `{date}` | `\| {date} \| {words} \| {goal} \| {status} \|` |
 | Success token | Replaces `{status}` when goal is met | `🟢` |
 | Failed token | Replaces `{status}` when goal is not met | `🔴` |
 

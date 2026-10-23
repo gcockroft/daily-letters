@@ -1,5 +1,6 @@
-import { AbstractInputSuggest, App, Notice, PluginSettingTab, Setting, TFile } from 'obsidian';
-import DailyLettersPlugin, { countCols, makeSeparator } from './main';
+import { AbstractInputSuggest, App, normalizePath, Notice, PluginSettingTab, Setting, TFile } from 'obsidian';
+import type DailyLettersPlugin from './main';
+import { buildRow, columnsMatch, invalidPatterns, makeSeparator } from './log';
 
 export interface DailyLettersSettings {
 	dailyGoal: number;
@@ -56,7 +57,14 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 
 	display(): void {
 		const { containerEl } = this;
+		const settings = this.plugin.settings;
+		const save = () => { void this.plugin.saveSettings(); };
 		containerEl.empty();
+
+		// Formats are edited as drafts and only copied into settings when valid,
+		// so a half-typed format can never be saved by some other change
+		let headerDraft = settings.headerFormat;
+		let rowDraft = settings.rowFormat;
 
 		// Live preview
 		const preview = containerEl.createDiv({ cls: 'daily-letters-preview' });
@@ -65,17 +73,14 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 		const previewCode = pre.createEl('code');
 
 		const updatePreview = () => {
-			const exampleRow = this.plugin.settings.rowFormat
-				.replace('{date}', '2026-08-01')
-				.replace('{words}', '523')
-				.replace('{goal}', String(this.plugin.settings.dailyGoal))
-				.replace('{status}', this.plugin.settings.successToken)
-				.replace('{files}', '[[note1]], [[note2]]');
-			const sep = makeSeparator(this.plugin.settings.headerFormat);
-			previewCode.textContent =
-				this.plugin.settings.headerFormat + '\n' +
-				sep + '\n' +
-				exampleRow;
+			const example = (date: string, words: number, files: string) =>
+				buildRow(rowDraft, date, words, settings.dailyGoal, settings.successToken, settings.failedToken, files);
+			previewCode.textContent = [
+				headerDraft,
+				makeSeparator(headerDraft),
+				example('2026-08-01', settings.dailyGoal + 23, '[[note1]], [[note2]]'),
+				example('2026-08-02', Math.floor(settings.dailyGoal / 2), '[[note3]]'),
+			].join('\n');
 		};
 		updatePreview();
 
@@ -86,22 +91,23 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('500')
-					.setValue(String(this.plugin.settings.dailyGoal))
+					.setValue(String(settings.dailyGoal))
 					.onChange((value) => {
-						const num = parseInt(value, 10);
-						if (!isNaN(num) && num > 0) {
-							this.plugin.settings.dailyGoal = num;
-							this.plugin.updateStatusBar();
-							this.plugin.debouncedPersistSettings();
-							updatePreview();
-						}
+						const num = Number(value);
+						const valid = Number.isInteger(num) && num > 0;
+						text.inputEl.toggleClass('daily-letters-invalid', !valid);
+						if (!valid) return;
+						settings.dailyGoal = num;
+						this.plugin.updateStatusBar();
+						save();
+						updatePreview();
 					})
 			);
 
 		// Tracking file
 		const saveTrackingFile = (value: string) => {
-			this.plugin.settings.trackingFile = value;
-			this.plugin.debouncedPersistSettings();
+			settings.trackingFile = value.trim() ? normalizePath(value.trim()) : '';
+			save();
 		};
 
 		new Setting(containerEl)
@@ -111,7 +117,7 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 				new FileSuggest(this.app, text.inputEl, saveTrackingFile);
 				text
 					.setPlaceholder('daily-letters-log.md')
-					.setValue(this.plugin.settings.trackingFile)
+					.setValue(settings.trackingFile)
 					.onChange(saveTrackingFile);
 			});
 
@@ -122,19 +128,28 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('templates/,daily-log')
-					.setValue(this.plugin.settings.excludePatterns)
+					.setValue(settings.excludePatterns)
 					.onChange((value) => {
-						this.plugin.settings.excludePatterns = value;
-						this.plugin.debouncedPersistSettings();
+						settings.excludePatterns = value;
+						save();
+						showPatternErrors();
 					})
 			);
+
+		const patternErrorEl = containerEl.createEl('p', { cls: 'daily-letters-error' });
+		const showPatternErrors = () => {
+			const bad = invalidPatterns(settings.excludePatterns);
+			patternErrorEl.setText(`Invalid pattern, ignored: ${bad.join(', ')}`);
+			patternErrorEl.toggleClass('mod-visible', bad.length > 0);
+		};
+		showPatternErrors();
 
 		// Format section
 		new Setting(containerEl).setName('Log format').setHeading();
 
-		// validate declared before header field, assigned after errorEl is created
+		// commitFormats is declared before the header field, assigned after errorEl is created
 		// (safe because onChange only fires at runtime, after display() completes)
-		let validate: () => boolean;
+		let commitFormats: () => void;
 
 		// Header format
 		new Setting(containerEl)
@@ -143,25 +158,30 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('| Date | Words | Goal | Met |')
-					.setValue(this.plugin.settings.headerFormat)
+					.setValue(headerDraft)
 					.onChange((value) => {
-						this.plugin.settings.headerFormat = value;
+						headerDraft = value;
 						updatePreview();
-						if (validate()) this.plugin.debouncedPersistSettings();
+						commitFormats();
 					})
 			);
 
 		// Error element sits between header and row fields in the DOM
-		const errorEl = containerEl.createEl('p', {
-			text: 'Header and row format must have the same number of | columns.',
-			cls: 'daily-letters-error',
-		});
+		const errorEl = containerEl.createEl('p', { cls: 'daily-letters-error' });
 
-		validate = (): boolean => {
-			const valid = countCols(this.plugin.settings.headerFormat) ===
-				countCols(this.plugin.settings.rowFormat);
-			errorEl.toggleClass('mod-visible', !valid);
-			return valid;
+		commitFormats = () => {
+			const error = !columnsMatch(headerDraft, rowDraft)
+				? 'Header and row format must have the same number of | columns.'
+				: !rowDraft.includes('{date}')
+					? 'Row format must include {date} so today\'s row can be found.'
+					: '';
+			errorEl.setText(error);
+			errorEl.toggleClass('mod-visible', error !== '');
+			if (error) return;
+			if (settings.headerFormat === headerDraft && settings.rowFormat === rowDraft) return;
+			settings.headerFormat = headerDraft;
+			settings.rowFormat = rowDraft;
+			save();
 		};
 
 		// Row format
@@ -171,11 +191,11 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('| {date} | {words} | {goal} | {status} |')
-					.setValue(this.plugin.settings.rowFormat)
+					.setValue(rowDraft)
 					.onChange((value) => {
-						this.plugin.settings.rowFormat = value;
+						rowDraft = value;
 						updatePreview();
-						if (validate()) this.plugin.debouncedPersistSettings();
+						commitFormats();
 					})
 			);
 
@@ -186,11 +206,11 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('🟢')
-					.setValue(this.plugin.settings.successToken)
+					.setValue(settings.successToken)
 					.onChange((value) => {
-						this.plugin.settings.successToken = value;
+						settings.successToken = value;
 						updatePreview();
-						this.plugin.debouncedPersistSettings();
+						save();
 					})
 			);
 
@@ -201,10 +221,11 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('🔴')
-					.setValue(this.plugin.settings.failedToken)
+					.setValue(settings.failedToken)
 					.onChange((value) => {
-						this.plugin.settings.failedToken = value;
-						this.plugin.debouncedPersistSettings();
+						settings.failedToken = value;
+						updatePreview();
+						save();
 					})
 			);
 
@@ -216,9 +237,15 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 				btn
 					.setButtonText('Write entry')
 					.onClick(async () => {
-						await this.plugin.upsertLogEntry();
-						new Notice('Daily Letters: entry written');
+						if (!settings.trackingFile) {
+							new Notice('Daily Letters: set a tracking file first');
+							return;
+						}
+						this.plugin.checkDay();
+						if (await this.plugin.flush()) new Notice('Daily Letters: entry written');
 					})
 			);
+
+		commitFormats();
 	}
 }

@@ -7,7 +7,7 @@ interface PersistedData {
 	settings: DailyLettersSettings;
 	day: DayData;
 	// Pre-1.1 shape, read once for migration
-	today?: { date: string; wordsToday: number; editedFiles: string[] };
+	today?: { date: string; wordsToday?: number; editedFiles?: string[] };
 }
 
 const todayStr = () => moment().format('YYYY-MM-DD');
@@ -26,9 +26,10 @@ export default class DailyLettersPlugin extends Plugin {
 		if (this.settings.trackingFile) this.settings.trackingFile = normalizePath(this.settings.trackingFile);
 		const legacy = saved?.today;
 		const day = saved?.day
-			?? (legacy && { date: legacy.date, words: legacy.wordsToday, files: legacy.editedFiles })
+			?? (legacy && { date: legacy.date, words: legacy.wordsToday ?? 0, files: legacy.editedFiles })
 			?? emptyDay(todayStr());
-		this.tracker = new DayTracker(day);
+		// Older saves may lack files entirely
+		this.tracker = new DayTracker({ ...day, files: day.files ?? [] });
 
 		this.statusBarItem = this.addStatusBarItem();
 		this.updateStatusBar();

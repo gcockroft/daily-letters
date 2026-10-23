@@ -61,7 +61,7 @@ Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) and add this repo U
 ## Development
 
 ```bash
-git clone https://github.com/gcockroft534/daily-letters
+git clone https://github.com/gcockroft/daily-letters
 cd daily-letters
 npm install
 npm run dev     # watch mode

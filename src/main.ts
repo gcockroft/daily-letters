@@ -1,6 +1,6 @@
 import { moment, normalizePath, Notice, Plugin, TFile } from 'obsidian';
 import { DailyLettersSettings, DEFAULT_SETTINGS, DailyLettersSettingTab } from './settings';
-import { buildRow, formatNotes, isExcluded, upsertRow } from './log';
+import { formatNotes, isExcluded, upsertRow } from './log';
 import { countWords, DayData, DayTracker, emptyDay } from './tracker';
 
 interface PersistedData {
@@ -125,8 +125,10 @@ export default class DailyLettersPlugin extends Plugin {
 		const path = this.settings.trackingFile;
 		if (!path) return;
 		const { headerFormat, rowFormat, dailyGoal, successToken, failedToken } = this.settings;
-		const row = buildRow(rowFormat, day.date, day.words, dailyGoal, successToken, failedToken, formatNotes(day.files));
-		const update = (content: string) => upsertRow(content, { headerFormat, rowFormat, row });
+		const update = (content: string) => upsertRow(content, {
+			headerFormat, rowFormat, successToken, failedToken,
+			date: day.date, words: day.words, goal: dailyGoal, notes: formatNotes(day.files),
+		});
 
 		const existing = this.app.vault.getAbstractFileByPath(path);
 		if (existing instanceof TFile) {

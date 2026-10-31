@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { countCols, makeSeparator, columnsMatch, buildRow, isExcluded, formatNotes, upsertRow, invalidPatterns } from './log';
+import type { UpsertOptions } from './log';
 
 describe('countCols', () => {
 	it('counts columns in a standard header', () => {
@@ -157,68 +158,150 @@ describe('upsertRow', () => {
 	const headerFormat = '| Date | Words | Goal | Met |';
 	const rowFormat = '| {date} | {words} | {goal} | {status} |';
 	const header = '| Date | Words | Goal | Met |\n|---|---|---|---|\n';
-	const opts = (row: string, overrides = {}) =>
-		({ headerFormat, rowFormat, row, ...overrides });
+	const opts = (date: string, words: number, overrides: Partial<UpsertOptions> = {}): UpsertOptions =>
+		({ headerFormat, rowFormat, date, words, goal: 500, successToken: '🟢', failedToken: '🔴', ...overrides });
 
 	it('creates a table in an empty file', () => {
-		const out = upsertRow('', opts('| 2026-08-01 | 5 | 500 | 🔴 |'));
+		const out = upsertRow('', opts('2026-08-01', 5));
 		expect(out).toBe(header + '| 2026-08-01 | 5 | 500 | 🔴 |\n');
 	});
 	it('replaces today\'s existing row', () => {
 		const content = header + '| 2026-08-01 | 5 | 500 | 🔴 |\n';
-		const out = upsertRow(content, opts('| 2026-08-01 | 9 | 500 | 🔴 |'));
+		const out = upsertRow(content, opts('2026-08-01', 9));
 		expect(out).toBe(header + '| 2026-08-01 | 9 | 500 | 🔴 |\n');
 	});
 	it('appends a new day after the last row', () => {
 		const content = header + '| 2026-08-01 | 5 | 500 | 🔴 |\n';
-		const out = upsertRow(content, opts('| 2026-08-02 | 1 | 500 | 🔴 |'));
+		const out = upsertRow(content, opts('2026-08-02', 1));
 		expect(out).toBe(header + '| 2026-08-01 | 5 | 500 | 🔴 |\n| 2026-08-02 | 1 | 500 | 🔴 |\n');
 	});
 	it('is idempotent', () => {
-		const row = '| 2026-08-01 | 5 | 500 | 🔴 |';
-		const once = upsertRow('', opts(row));
-		expect(upsertRow(once, opts(row))).toBe(once);
+		const once = upsertRow('', opts('2026-08-01', 5));
+		expect(upsertRow(once, opts('2026-08-01', 5))).toBe(once);
 	});
 	it('matches rows Obsidian has re-padded', () => {
 		const content = '| Date       | Words | Goal | Met |\n| ---------- | ----- | ---- | --- |\n| 2026-08-01 | 5     | 500  | 🔴  |\n';
-		const out = upsertRow(content, opts('| 2026-08-01 | 9 | 500 | 🔴 |'));
+		const out = upsertRow(content, opts('2026-08-01', 9));
 		expect(out).toBe('| Date       | Words | Goal | Met |\n| ---------- | ----- | ---- | --- |\n| 2026-08-01 | 9 | 500 | 🔴 |\n');
 	});
 	it('finds today\'s row when the date is not the first column', () => {
 		const custom = { headerFormat: '| Words | Date |', rowFormat: '| {words} | {date} |' };
 		const content = '| Words | Date |\n|---|---|\n| 5 | 2026-08-01 |\n';
-		const out = upsertRow(content, opts('| 9 | 2026-08-01 |', custom));
+		const out = upsertRow(content, opts('2026-08-01', 9, custom));
 		expect(out).toBe('| Words | Date |\n|---|---|\n| 9 | 2026-08-01 |\n');
 	});
 	it('does not mistake another date-like cell for today\'s row', () => {
 		const content = header + '| 2026-08-02 | 2026 | 500 | 🔴 |\n';
-		const out = upsertRow(content, opts('| 2026-08-01 | 1 | 500 | 🔴 |'));
+		const out = upsertRow(content, opts('2026-08-01', 1));
 		expect(out).toBe(content + '| 2026-08-01 | 1 | 500 | 🔴 |\n');
 	});
 	it('inserts at the end of the table, not the end of the file', () => {
 		const content = header + '| 2026-08-01 | 5 | 500 | 🔴 |\n\nSome notes after.\n';
-		const out = upsertRow(content, opts('| 2026-08-02 | 1 | 500 | 🔴 |'));
+		const out = upsertRow(content, opts('2026-08-02', 1));
 		expect(out).toBe(header + '| 2026-08-01 | 5 | 500 | 🔴 |\n| 2026-08-02 | 1 | 500 | 🔴 |\n\nSome notes after.\n');
 	});
 	it('ignores an unrelated table and appends a new one after existing content', () => {
 		const content = '---\ntags: log\n---\n| A | B |\n|---|---|\n| x | y |\n';
-		const out = upsertRow(content, opts('| 2026-08-01 | 1 | 500 | 🔴 |'));
+		const out = upsertRow(content, opts('2026-08-01', 1));
 		expect(out).toBe(content + '\n' + header + '| 2026-08-01 | 1 | 500 | 🔴 |\n');
 	});
 	it('keeps using an existing table after the header text changes', () => {
 		const content = '| Day | Count | Target | Ok |\n|---|---|---|---|\n| 2026-08-01 | 5 | 500 | 🔴 |\n';
-		const out = upsertRow(content, opts('| 2026-08-01 | 9 | 500 | 🔴 |'));
+		const out = upsertRow(content, opts('2026-08-01', 9));
 		expect(out).toBe('| Day | Count | Target | Ok |\n|---|---|---|---|\n| 2026-08-01 | 9 | 500 | 🔴 |\n');
 	});
 	it('handles a file without a trailing newline', () => {
 		const content = header + '| 2026-08-01 | 5 | 500 | 🔴 |';
-		const out = upsertRow(content, opts('| 2026-08-02 | 1 | 500 | 🔴 |'));
+		const out = upsertRow(content, opts('2026-08-02', 1));
 		expect(out).toBe(header + '| 2026-08-01 | 5 | 500 | 🔴 |\n| 2026-08-02 | 1 | 500 | 🔴 |');
 	});
 	it('handles escaped pipes in a files cell', () => {
-		const files = { headerFormat: '| Date | Files |', rowFormat: '| {date} | {files} |' };
+		const files = { headerFormat: '| Date | Files |', rowFormat: '| {date} | {files} |', notes: '[[c]]' };
 		const content = '| Date | Files |\n|---|---|\n| 2026-08-01 | [[a\\|b]] |\n';
-		const out = upsertRow(content, opts('| 2026-08-01 | [[c]] |', files));
+		const out = upsertRow(content, opts('2026-08-01', 0, files));
 		expect(out).toBe('| Date | Files |\n|---|---|\n| 2026-08-01 | [[c]] |\n');
+	});
+	it('handles CRLF line endings', () => {
+		const content = header.replaceAll('\n', '\r\n') + '| 2026-08-01 | 5 | 500 | 🔴 |\r\n';
+		const out = upsertRow(content, opts('2026-08-01', 9));
+		expect(out).toBe(header.replaceAll('\n', '\r\n') + '| 2026-08-01 | 9 | 500 | 🔴 |\n');
+	});
+});
+
+describe('upsertRow with several devices', () => {
+	const headerFormat = '| Date | Words | Goal | Met |';
+	const rowFormat = '| {date} | {words} | {goal} | {status} |';
+	const header = '| Date | Words | Goal | Met |\n|---|---|---|---|\n';
+	const opts = (date: string, words: number, overrides: Partial<UpsertOptions> = {}): UpsertOptions =>
+		({ headerFormat, rowFormat, date, words, goal: 500, successToken: '🟢', failedToken: '🔴', ...overrides });
+
+	it('writes into the row another device already created, not a new table', () => {
+		const content = header + '| 2026-08-01 | 120 | 500 | 🔴 |\n';
+		const out = upsertRow(content, opts('2026-08-01', 300));
+		expect(out).toBe(header + '| 2026-08-01 | 300 | 500 | 🔴 |\n');
+	});
+	it('keeps the existing row\'s goal when this device\'s goal differs', () => {
+		const content = header + '| 2026-08-01 | 120 | 1000 | 🔴 |\n';
+		const out = upsertRow(content, opts('2026-08-01', 600, { goal: 500 }));
+		expect(out).toBe(header + '| 2026-08-01 | 600 | 1000 | 🔴 |\n');
+	});
+	it('judges the status against the existing goal', () => {
+		const content = header + '| 2026-08-01 | 120 | 250 | 🔴 |\n';
+		const out = upsertRow(content, opts('2026-08-01', 300, { goal: 500 }));
+		expect(out).toBe(header + '| 2026-08-01 | 300 | 250 | 🟢 |\n');
+	});
+	it('reads the existing goal from a re-padded row', () => {
+		const content = '| Date       | Words | Goal | Met |\n| ---------- | ----- | ---- | --- |\n| 2026-08-01 | 5     | 800  | 🔴  |\n';
+		const out = upsertRow(content, opts('2026-08-01', 9));
+		expect(out).toContain('| 2026-08-01 | 9 | 800 | 🔴 |');
+	});
+	it('reads the existing goal from a cell shared with other tokens', () => {
+		const custom = { headerFormat: '| Date | Progress |', rowFormat: '| {date} | {words}/{goal} {status} |' };
+		const content = '| Date | Progress |\n|---|---|\n| 2026-08-01 | 120/1000 🔴 |\n';
+		const out = upsertRow(content, opts('2026-08-01', 600, custom));
+		expect(out).toBe('| Date | Progress |\n|---|---|\n| 2026-08-01 | 600/1000 🔴 |\n');
+	});
+	it('uses this device\'s goal for a new day', () => {
+		const content = header + '| 2026-08-01 | 120 | 1000 | 🔴 |\n';
+		const out = upsertRow(content, opts('2026-08-02', 600, { goal: 500 }));
+		expect(out).toBe(content + '| 2026-08-02 | 600 | 500 | 🟢 |\n');
+	});
+	it('uses this device\'s goal when the existing goal cell is unreadable', () => {
+		const content = header + '| 2026-08-01 | 120 | ? | 🔴 |\n';
+		const out = upsertRow(content, opts('2026-08-01', 600, { goal: 500 }));
+		expect(out).toBe(header + '| 2026-08-01 | 600 | 500 | 🟢 |\n');
+	});
+	it('merges a duplicate log table that sync appended', () => {
+		const content = header + '| 2026-07-31 | 700 | 500 | 🟢 |\n| 2026-08-01 | 120 | 1000 | 🔴 |\n\n'
+			+ header + '| 2026-08-01 | 40 | 500 | 🔴 |\n';
+		const out = upsertRow(content, opts('2026-08-01', 300));
+		expect(out).toBe(header + '| 2026-07-31 | 700 | 500 | 🟢 |\n| 2026-08-01 | 300 | 1000 | 🔴 |\n');
+	});
+	it('merges a duplicate header that sync spliced into the table', () => {
+		const content = header + '| 2026-08-01 | 120 | 1000 | 🔴 |\n' + header + '| 2026-08-01 | 40 | 500 | 🔴 |\n';
+		const out = upsertRow(content, opts('2026-08-01', 300));
+		expect(out).toBe(header + '| 2026-08-01 | 300 | 1000 | 🔴 |\n');
+	});
+	it('keeps days that only the duplicate table has', () => {
+		const content = header + '| 2026-07-30 | 10 | 500 | 🔴 |\n\n' + header + '| 2026-07-31 | 20 | 500 | 🔴 |\n';
+		const out = upsertRow(content, opts('2026-08-01', 30));
+		expect(out).toBe(header + '| 2026-07-30 | 10 | 500 | 🔴 |\n| 2026-07-31 | 20 | 500 | 🔴 |\n| 2026-08-01 | 30 | 500 | 🔴 |\n');
+	});
+	it('leaves surrounding content alone when merging', () => {
+		const content = 'Intro\n\n' + header + '| 2026-08-01 | 1 | 500 | 🔴 |\n\nMiddle\n\n' + header + '| 2026-07-31 | 2 | 500 | 🔴 |\n\nOutro\n';
+		const out = upsertRow(content, opts('2026-08-01', 5));
+		expect(out).toBe('Intro\n\n' + header + '| 2026-08-01 | 5 | 500 | 🔴 |\n| 2026-07-31 | 2 | 500 | 🔴 |\n\nMiddle\n\nOutro\n');
+	});
+	it('does not merge an unrelated table with the same width', () => {
+		const other = '| A | B | C | D |\n|---|---|---|---|\n| 1 | 2 | 3 | 4 |\n';
+		const content = header + '| 2026-08-01 | 1 | 500 | 🔴 |\n\n' + other;
+		const out = upsertRow(content, opts('2026-08-01', 5));
+		expect(out).toBe(header + '| 2026-08-01 | 5 | 500 | 🔴 |\n\n' + other);
+	});
+	it('settles to a single row as two devices take turns writing', () => {
+		let file = upsertRow('', opts('2026-08-01', 100, { goal: 1000 }));      // device A
+		file = upsertRow(file, opts('2026-08-01', 250, { goal: 500 }));         // device B
+		file = upsertRow(file, opts('2026-08-01', 1200, { goal: 1000 }));       // device A
+		expect(file).toBe(header + '| 2026-08-01 | 1200 | 1000 | 🟢 |\n');
 	});
 });

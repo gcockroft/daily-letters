@@ -20,11 +20,11 @@ describe('DayTracker', () => {
 	const fresh = () => new DayTracker(emptyDay('2026-10-22'));
 
 	it('starts from the given day', () => {
-		const t = new DayTracker({ date: '2026-10-22', words: 40, files: ['a.md'] });
-		expect(t.day).toEqual({ date: '2026-10-22', words: 40, files: ['a.md'] });
+		const t = new DayTracker({ date: '2026-10-22', words: 40, files: ['a.md'], logged: 30 });
+		expect(t.day).toEqual({ date: '2026-10-22', words: 40, files: ['a.md'], logged: 30 });
 	});
 	it('does not share the files array with the saved day', () => {
-		const saved = { date: '2026-10-22', words: 0, files: [] };
+		const saved = { date: '2026-10-22', words: 0, files: [], logged: 0 };
 		const t = new DayTracker(saved);
 		t.onEdit('a.md', 1);
 		t.onEdit('a.md', 2);
@@ -96,8 +96,8 @@ describe('DayTracker', () => {
 		t.onEdit('a.md', 1);
 		t.onEdit('a.md', 5);
 		const old = t.rollover('2026-10-23');
-		expect(old).toEqual({ date: '2026-10-22', words: 4, files: ['a.md'] });
-		expect(t.day).toEqual({ date: '2026-10-23', words: 0, files: [] });
+		expect(old).toEqual({ date: '2026-10-22', words: 4, files: ['a.md'], logged: 0 });
+		expect(t.day).toEqual({ date: '2026-10-23', words: 0, files: [], logged: 0 });
 	});
 	it('keeps baselines across rollover so open files are not re-credited', () => {
 		const t = fresh();

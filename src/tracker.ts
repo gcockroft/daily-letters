@@ -4,10 +4,11 @@ export interface DayData {
 	date: string;       // YYYY-MM-DD
 	words: number;
 	files: string[];    // paths that gained words today, in first-edit order
+	logged: number;     // how many of `words` have been added to the log row
 }
 
 export function emptyDay(date: string): DayData {
-	return { date, words: 0, files: [] };
+	return { date, words: 0, files: [], logged: 0 };
 }
 
 export function countWords(text: string): number {

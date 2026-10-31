@@ -95,49 +95,64 @@ function findTables(lines: string[]): Table[] {
 	return tables;
 }
 
+type Token = 'date' | 'words' | 'goal' | 'status' | 'files';
 const TOKEN = /\{(date|words|goal|status|files)\}/;
+const NUMERIC: Token[] = ['words', 'goal'];
 
-// Reads the number a `{goal}` cell holds, using the row format to locate it.
-function goalIn(line: string, rowFormat: string): number | undefined {
+// Reads what `token` rendered to in a log row, using the row format to locate it.
+function tokenIn(line: string, rowFormat: string, token: Token): string | undefined {
 	const templates = splitCells(rowFormat);
-	const col = templates.findIndex((c) => c.includes('{goal}'));
+	const col = templates.findIndex((c) => c.includes(`{${token}}`));
 	if (col === -1) return undefined;
 	let captured = false;
 	const pattern = templates[col]!.split(new RegExp(`(${TOKEN.source})`)).map((part, i) => {
-		if (i % 3 === 2) return '';   // inner capture of TOKEN; already handled with its whole match
+		if (i % 3 === 2) return '';   // inner group of TOKEN; its whole match is handled at i % 3 === 1
 		if (i % 3 === 0) return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
-		if (part === '{goal}' && !captured) { captured = true; return '(\\d+)'; }
-		return part === '{goal}' ? '\\d+' : '.*?';
+		const value = NUMERIC.includes(part.slice(1, -1) as Token) ? '\\d+' : '.*?';
+		if (part !== `{${token}}` || captured) return value;
+		captured = true;
+		return `(${value})`;
 	}).join('');
-	const match = new RegExp(`^${pattern}$`).exec(splitCells(line)[col] ?? '');
-	return match ? Number(match[1]) : undefined;
+	return new RegExp(`^${pattern}$`).exec(splitCells(line)[col] ?? '')?.[1];
 }
+
+function numberIn(line: string, rowFormat: string, token: 'words' | 'goal'): number | undefined {
+	const value = tokenIn(line, rowFormat, token);
+	return value === undefined ? undefined : Number(value);
+}
+
+function linksIn(line: string, rowFormat: string): string[] {
+	return tokenIn(line, rowFormat, 'files')?.match(/\[\[[^\]]*\]\]/g) ?? [];
+}
+
+const union = (a: string[], b: string[]) => [...new Set([...a, ...b])];
 
 export interface UpsertOptions {
 	headerFormat: string;
 	rowFormat: string;
 	date: string;
-	words: number;
+	added: number;      // words to add to the day's row
 	goal: number;
 	successToken: string;
 	failedToken: string;
-	notes?: string;
+	files?: string[];   // paths to add to the row's {files}
 }
 
 /**
- * Returns `content` with the row for `date` updated, or appended to the log table.
+ * Returns `content` with `added` words added to the row for `date`, creating
+ * the row (and the log table) if needed. Each device adds only the words it
+ * hasn't logged yet, so the row holds the sum across devices.
  *
  * The log table is the one whose header matches `headerFormat`, else the first
  * with the same column count; if there is none, a new table is appended. Other
  * tables with the same header are copies of the log (e.g. two devices created
- * it before syncing) and are merged into it, the earlier row winning per date.
+ * it before syncing) and are merged into it, adding up rows with the same date.
  *
- * An existing row for `date` keeps its goal, so with several devices the first
- * goal logged for a day wins; the words and status are rewritten.
+ * An existing row keeps its goal, so with several devices the first goal
+ * logged for a day wins. Its files gain any new paths.
  */
 export function upsertRow(content: string, opts: UpsertOptions): string {
-	const { headerFormat, rowFormat, date, words, goal, successToken, failedToken, notes = '' } = opts;
-	const render = (g: number) => buildRow(rowFormat, date, words, g, successToken, failedToken, notes);
+	const { headerFormat, rowFormat, date, added, goal, successToken, failedToken, files = [] } = opts;
 	const lines = content.split('\n');
 	const headerCells = splitCells(headerFormat);
 	const headerOf = (t: Table) => splitCells(lines[t.header] ?? '');
@@ -145,27 +160,38 @@ export function upsertRow(content: string, opts: UpsertOptions): string {
 	const log = tables.find((t) => headerOf(t).join('|') === headerCells.join('|'))
 		?? tables.find((t) => headerOf(t).length === headerCells.length);
 
+	const dateCol = splitCells(rowFormat).findIndex((c) => c.includes('{date}'));
+	const dateOf = (line: string) => (dateCol === -1 ? undefined : splitCells(line)[dateCol]);
+	const render = (d: string, words: number, g: number, links: string[]) =>
+		buildRow(rowFormat, d, words, g, successToken, failedToken, links.join(', '));
+	// `later`'s words are added to `earlier`; `earlier`'s goal wins
+	const combine = (earlier: string, later: string) => render(
+		dateOf(earlier) ?? date,
+		(numberIn(earlier, rowFormat, 'words') ?? 0) + (numberIn(later, rowFormat, 'words') ?? 0),
+		numberIn(earlier, rowFormat, 'goal') ?? numberIn(later, rowFormat, 'goal') ?? goal,
+		union(linksIn(earlier, rowFormat), linksIn(later, rowFormat)),
+	);
+
+	const fresh = buildRow(rowFormat, date, added, goal, successToken, failedToken, formatNotes(files));
+
 	if (!log) {
-		const block = `${headerFormat}\n${makeSeparator(headerFormat)}\n${render(goal)}\n`;
+		const block = `${headerFormat}\n${makeSeparator(headerFormat)}\n${fresh}\n`;
 		if (!content.trim()) return block;
 		return (content.endsWith('\n') ? content : content + '\n') + '\n' + block;
 	}
 
-	const dateCol = splitCells(rowFormat).findIndex((c) => c.includes('{date}'));
-	const dateOf = (line: string) => (dateCol === -1 ? undefined : splitCells(line)[dateCol]);
 	const body = (t: Table) => lines.slice(t.header + 2, t.end);
 	const copies = tables.filter((t) => t !== log && headerOf(t).join('|') === headerOf(log).join('|'));
 
 	const rows = body(log);
-	for (const row of copies.flatMap(body)) {
+	const upsert = (row: string) => {
 		const d = dateOf(row);
-		if (d === undefined || !rows.some((r) => dateOf(r) === d)) rows.push(row);
-	}
-
-	const todayCell = dateOf(render(goal));
-	const today = todayCell === undefined ? -1 : rows.findIndex((r) => dateOf(r) === todayCell);
-	if (today === -1) rows.push(render(goal));
-	else rows[today] = render(goalIn(rows[today]!, rowFormat) ?? goal);
+		const i = d === undefined ? -1 : rows.findIndex((r) => dateOf(r) === d);
+		if (i === -1) rows.push(row);
+		else rows[i] = combine(rows[i]!, row);
+	};
+	copies.flatMap(body).forEach((row) => upsert(row));
+	upsert(fresh);
 
 	// Rewrite bottom-up so earlier indexes stay valid
 	for (const t of [log, ...copies].sort((a, b) => b.header - a.header)) {

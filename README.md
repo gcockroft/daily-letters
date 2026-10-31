@@ -15,7 +15,7 @@ The plugin counts words you add in any markdown editor. Deleting words never sub
 
 The counter resets at midnight, and the finished day's row is written to the log. Progress is written to your log file a couple of seconds after you stop typing — no manual action needed. Edits to the log file itself and to excluded files are not counted.
 
-If you write on more than one device, each one updates the same row for the day with its own total. The row keeps the goal it was first logged with, so if your devices have different goals, the first one to log that day wins. If sync ever leaves two copies of the log table in the file, the next write merges them back into one. Devices should share the same table format: a table with a different number of columns is treated as a separate log.
+If you write on more than one device, they share one row per day: each device adds the words it hasn't logged yet, so the row holds your total across devices, and `{files}` lists the files edited on any of them. The row keeps the goal it was first logged with, so if your devices have different goals, the first one to log that day wins. If sync ever leaves two copies of the log table in the file, the next write merges them back into one, adding up the words for any day that appears in both. The status bar still shows only the current device's words. Devices should share the same table format: a table with a different number of columns is treated as a separate log.
 
 ## Settings
 

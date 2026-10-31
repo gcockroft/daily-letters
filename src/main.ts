@@ -1,11 +1,11 @@
 import { moment, normalizePath, Notice, Plugin, TFile } from 'obsidian';
 import { DailyLettersSettings, DEFAULT_SETTINGS, DailyLettersSettingTab } from './settings';
-import { formatNotes, isExcluded, upsertRow } from './log';
+import { isExcluded, upsertRow } from './log';
 import { countWords, DayData, DayTracker, emptyDay } from './tracker';
 
 interface PersistedData {
 	settings: DailyLettersSettings;
-	day: DayData;
+	day: Omit<DayData, 'logged'> & { logged?: number };   // logged added in 1.2
 	// Pre-1.1 shape, read once for migration
 	today?: { date: string; wordsToday?: number; editedFiles?: string[] };
 }
@@ -25,11 +25,12 @@ export default class DailyLettersPlugin extends Plugin {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved?.settings);
 		if (this.settings.trackingFile) this.settings.trackingFile = normalizePath(this.settings.trackingFile);
 		const legacy = saved?.today;
-		const day = saved?.day
+		const day: Partial<DayData> & Pick<DayData, 'date' | 'words'> = saved?.day
 			?? (legacy && { date: legacy.date, words: legacy.wordsToday ?? 0, files: legacy.editedFiles })
 			?? emptyDay(todayStr());
-		// Older saves may lack files entirely
-		this.tracker = new DayTracker({ ...day, files: day.files ?? [] });
+		// Older saves may lack files entirely. Before logged existed the row held the
+		// day's whole count, so treat it as logged rather than adding it again.
+		this.tracker = new DayTracker({ ...day, files: day.files ?? [], logged: day.logged ?? day.words });
 
 		this.statusBarItem = this.addStatusBarItem();
 		this.updateStatusBar();
@@ -104,14 +105,17 @@ export default class DailyLettersPlugin extends Plugin {
 	}
 
 	/**
-	 * Save state and write `day`'s row to the log. Writes are queued so two
-	 * flushes never read-modify-write the log at the same time.
+	 * Add `day`'s unlogged words to its row in the log, then save state. Writes
+	 * are queued so two flushes never read-modify-write the log at the same time.
 	 * Resolves false (after showing a notice) if the write failed.
 	 */
 	flush(day: DayData = this.tracker.day): Promise<boolean> {
 		const run = this.writeQueue.then(async () => {
-			await this.saveSettings();
-			await this.writeRow(day);
+			try {
+				await this.writeRow(day);
+			} finally {
+				await this.saveSettings();
+			}
 		});
 		this.writeQueue = run.catch(() => undefined);
 		return run.then(() => true, (err: unknown) => {
@@ -125,20 +129,23 @@ export default class DailyLettersPlugin extends Plugin {
 		const path = this.settings.trackingFile;
 		if (!path) return;
 		const { headerFormat, rowFormat, dailyGoal, successToken, failedToken } = this.settings;
+		// Other devices add their own words to the same row, so only add what's new
+		const words = day.words;
 		const update = (content: string) => upsertRow(content, {
 			headerFormat, rowFormat, successToken, failedToken,
-			date: day.date, words: day.words, goal: dailyGoal, notes: formatNotes(day.files),
+			date: day.date, added: words - day.logged, goal: dailyGoal, files: day.files,
 		});
 
 		const existing = this.app.vault.getAbstractFileByPath(path);
 		if (existing instanceof TFile) {
 			await this.app.vault.process(existing, update);
-			return;
+		} else {
+			const folder = path.split('/').slice(0, -1).join('/');
+			if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
+				await this.app.vault.createFolder(folder);
+			}
+			await this.app.vault.create(path, update(''));
 		}
-		const folder = path.split('/').slice(0, -1).join('/');
-		if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-			await this.app.vault.createFolder(folder);
-		}
-		await this.app.vault.create(path, update(''));
+		day.logged = words;
 	}
 }

@@ -1,6 +1,6 @@
 {
 	"name": "daily-letters",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"description": "Daily word count goal tracker for Obsidian",
 	"main": "main.js",
 	"type": "module",

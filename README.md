@@ -22,6 +22,7 @@ If you write on more than one device, they share one row per day: each device ad
 | Setting | Description | Default |
 |---|---|---|
 | Daily word goal | Words to write before the status bar turns green | `500` |
+| Day starts at | Writing before this time counts toward the previous day (e.g. `01:30` for night owls) | `00:00` |
 | Tracking file | Vault-relative path to the log file (created automatically) | — |
 | Header format | Column headers for the markdown table | `\| Date \| Words \| Goal \| Met \|` |
 | Exclude patterns | Comma-separated regexes; matching file paths are not counted | — |

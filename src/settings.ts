@@ -1,9 +1,11 @@
 import { AbstractInputSuggest, App, normalizePath, Notice, PluginSettingTab, Setting, TFile } from 'obsidian';
 import type DailyLettersPlugin from './main';
+import { parseDayStart } from './tracker';
 import { buildRow, columnsMatch, invalidPatterns, makeSeparator } from './log';
 
 export interface DailyLettersSettings {
 	dailyGoal: number;
+	dayStartTime: string;   // HH:MM, 24-hour
 	trackingFile: string;
 	excludePatterns: string;
 	headerFormat: string;
@@ -14,6 +16,7 @@ export interface DailyLettersSettings {
 
 export const DEFAULT_SETTINGS: DailyLettersSettings = {
 	dailyGoal: 500,
+	dayStartTime: '00:00',
 	trackingFile: '',
 	excludePatterns: '',
 	headerFormat: '| Date | Words | Goal | Met |',
@@ -103,6 +106,24 @@ export class DailyLettersSettingTab extends PluginSettingTab {
 						updatePreview();
 					})
 			);
+
+		// Day start
+		new Setting(containerEl)
+			.setName('Day starts at')
+			.setDesc('Writing before this time counts toward the previous day. Midnight by default.')
+			.addText((text) => {
+				text.inputEl.type = 'time';
+				text
+					.setValue(settings.dayStartTime)
+					.onChange((value) => {
+						const valid = parseDayStart(value) !== 0 || value === '00:00';
+						text.inputEl.toggleClass('daily-letters-invalid', !valid);
+						if (!valid) return;
+						settings.dayStartTime = value;
+						save();
+						this.plugin.checkDay();
+					});
+			});
 
 		// Tracking file
 		const saveTrackingFile = (value: string) => {

@@ -1,7 +1,7 @@
-import { moment, normalizePath, Notice, Plugin, TFile } from 'obsidian';
+import { normalizePath, Notice, Plugin, TFile } from 'obsidian';
 import { DailyLettersSettings, DEFAULT_SETTINGS, DailyLettersSettingTab } from './settings';
 import { isExcluded, upsertRow } from './log';
-import { countWords, DayData, DayTracker, emptyDay } from './tracker';
+import { countWords, DayData, dayFor, DayTracker, emptyDay } from './tracker';
 
 interface PersistedData {
 	settings: DailyLettersSettings;
@@ -9,8 +9,6 @@ interface PersistedData {
 	// Pre-1.1 shape, read once for migration
 	today?: { date: string; wordsToday?: number; editedFiles?: string[] };
 }
-
-const todayStr = () => moment().format('YYYY-MM-DD');
 
 export default class DailyLettersPlugin extends Plugin {
 	settings!: DailyLettersSettings;
@@ -27,7 +25,7 @@ export default class DailyLettersPlugin extends Plugin {
 		const legacy = saved?.today;
 		const day: Partial<DayData> & Pick<DayData, 'date' | 'words'> = saved?.day
 			?? (legacy && { date: legacy.date, words: legacy.wordsToday ?? 0, files: legacy.editedFiles })
-			?? emptyDay(todayStr());
+			?? emptyDay(this.todayStr());
 		// Older saves may lack files entirely. Before logged existed the row held the
 		// day's whole count, so treat it as logged rather than adding it again.
 		this.tracker = new DayTracker({ ...day, files: day.files ?? [], logged: day.logged ?? day.words });
@@ -73,9 +71,14 @@ export default class DailyLettersPlugin extends Plugin {
 		}
 	}
 
+	/** Today's date, where the day starts at the configured time. */
+	todayStr(): string {
+		return dayFor(new Date(), this.settings.dayStartTime);
+	}
+
 	/** Start a new day if the date has changed, writing out the finished one. */
 	checkDay() {
-		const finished = this.tracker.rollover(todayStr());
+		const finished = this.tracker.rollover(this.todayStr());
 		if (!finished) return;
 		this.updateStatusBar();
 		void this.flush(finished);

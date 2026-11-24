@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countWords, DayTracker, emptyDay } from './tracker';
+import { countWords, dayFor, DayTracker, emptyDay, parseDayStart } from './tracker';
 
 describe('countWords', () => {
 	it('counts words in normal prose', () => {
@@ -99,10 +99,52 @@ describe('DayTracker', () => {
 		expect(old).toEqual({ date: '2026-10-22', words: 4, files: ['a.md'], logged: 0 });
 		expect(t.day).toEqual({ date: '2026-10-23', words: 0, files: [], logged: 0 });
 	});
+	it('never rolls back to an earlier date', () => {
+		const t = fresh(); // 2026-10-22
+		t.onEdit('a.md', 1);
+		t.onEdit('a.md', 3);
+		expect(t.rollover('2026-10-21')).toBeNull();
+		expect(t.day).toEqual({ date: '2026-10-22', words: 2, files: ['a.md'] });
+	});
 	it('keeps baselines across rollover so open files are not re-credited', () => {
 		const t = fresh();
 		t.onEdit('a.md', 100);
 		t.rollover('2026-10-23');
 		expect(t.onEdit('a.md', 101)).toBe(1);
+	});
+});
+
+describe('parseDayStart', () => {
+	it('parses HH:MM to minutes', () => {
+		expect(parseDayStart('00:00')).toBe(0);
+		expect(parseDayStart('00:30')).toBe(30);
+		expect(parseDayStart('13:30')).toBe(810);
+		expect(parseDayStart('23:59')).toBe(1439);
+	});
+	it('treats invalid values as midnight', () => {
+		for (const v of ['', '25:00', '9:5', '12:60', 'abc', '1:30']) expect(parseDayStart(v)).toBe(0);
+	});
+});
+
+describe('dayFor', () => {
+	it('is the plain local date with a midnight start', () => {
+		expect(dayFor(new Date(2026, 10, 25, 0, 0), '00:00')).toBe('2026-11-25');
+		expect(dayFor(new Date(2026, 10, 24, 23, 59), '00:00')).toBe('2026-11-24');
+	});
+	it('counts time before the start toward the previous day', () => {
+		expect(dayFor(new Date(2026, 10, 25, 0, 29), '00:30')).toBe('2026-11-24');
+		expect(dayFor(new Date(2026, 10, 25, 0, 30), '00:30')).toBe('2026-11-25');
+	});
+	it('crosses month and year boundaries', () => {
+		expect(dayFor(new Date(2026, 11, 1, 1, 0), '01:30')).toBe('2026-11-30');
+		expect(dayFor(new Date(2027, 0, 1, 1, 0), '01:30')).toBe('2026-12-31');
+	});
+	it('uses wall-clock time', () => {
+		// 2026-03-29 is the EU spring-forward night; result must depend only on local h:m
+		expect(dayFor(new Date(2026, 2, 29, 1, 29), '01:30')).toBe('2026-03-28');
+		expect(dayFor(new Date(2026, 2, 29, 3, 0), '01:30')).toBe('2026-03-29');
+	});
+	it('falls back to midnight for an invalid start', () => {
+		expect(dayFor(new Date(2026, 10, 25, 0, 10), 'junk')).toBe('2026-11-25');
 	});
 });

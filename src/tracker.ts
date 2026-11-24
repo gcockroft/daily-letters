@@ -17,6 +17,26 @@ export function countWords(text: string): number {
 	return trimmed.split(/\s+/).length;
 }
 
+/** Minutes after midnight for an `HH:MM` time; anything else counts as midnight. */
+export function parseDayStart(value: string): number {
+	const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
+	return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
+}
+
+/**
+ * The `YYYY-MM-DD` day that `now` belongs to when days start at `dayStartTime`.
+ * Compares local clock time rather than subtracting milliseconds, so the
+ * split stays at the chosen wall-clock time across DST changes.
+ */
+export function dayFor(now: Date, dayStartTime: string): string {
+	const minutes = now.getHours() * 60 + now.getMinutes();
+	const d = minutes < parseDayStart(dayStartTime)
+		? new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+		: now;
+	const pad = (n: number) => String(n).padStart(2, '0');
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export class DayTracker {
 	day: DayData;
 
@@ -29,9 +49,13 @@ export class DayTracker {
 		this.day = { ...day, files: [...day.files] };
 	}
 
-	/** If `today` is a new date, start an empty day and return the finished one. */
+	/**
+	 * If `today` is a later date, start an empty day and return the finished one.
+	 * An earlier date (the day start moved later after midnight) is ignored, so a
+	 * logged day is never reopened empty and overwritten.
+	 */
 	rollover(today: string): DayData | null {
-		if (this.day.date === today) return null;
+		if (today <= this.day.date) return null;
 		const finished = this.day;
 		this.day = emptyDay(today);
 		return finished;

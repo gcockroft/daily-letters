@@ -106,6 +106,15 @@ describe('DayTracker', () => {
 		expect(t.rollover('2026-10-21')).toBeNull();
 		expect(t.day).toEqual({ date: '2026-10-22', words: 2, files: ['a.md'] });
 	});
+	it('moves to an earlier date more than a day back (clock was wrong)', () => {
+		const t = new DayTracker(emptyDay('2036-01-01'));
+		expect(t.rollover('2026-10-22')?.date).toBe('2036-01-01');
+		expect(t.day.date).toBe('2026-10-22');
+	});
+	it('ignores going back exactly one day across a month boundary', () => {
+		const t = new DayTracker(emptyDay('2026-11-01'));
+		expect(t.rollover('2026-10-31')).toBeNull();
+	});
 	it('keeps baselines across rollover so open files are not re-credited', () => {
 		const t = fresh();
 		t.onEdit('a.md', 100);
@@ -139,10 +148,19 @@ describe('dayFor', () => {
 		expect(dayFor(new Date(2026, 11, 1, 1, 0), '01:30')).toBe('2026-11-30');
 		expect(dayFor(new Date(2027, 0, 1, 1, 0), '01:30')).toBe('2026-12-31');
 	});
-	it('uses wall-clock time', () => {
-		// 2026-03-29 is the EU spring-forward night; result must depend only on local h:m
-		expect(dayFor(new Date(2026, 2, 29, 1, 29), '01:30')).toBe('2026-03-28');
-		expect(dayFor(new Date(2026, 2, 29, 3, 0), '01:30')).toBe('2026-03-29');
+	// Tests run with TZ=Europe/Berlin (vitest.config.ts): clocks jump 02:00→03:00
+	// on 2026-03-29 and fall back 03:00→02:00 on 2026-10-25.
+	it('splits at wall-clock time on the spring-forward night', () => {
+		expect(dayFor(new Date(2026, 2, 29, 1, 59), '02:30')).toBe('2026-03-28');
+		expect(dayFor(new Date(2026, 2, 29, 3, 0), '02:30')).toBe('2026-03-29');
+	});
+	it('splits at wall-clock time on the fall-back night', () => {
+		const firstPass = new Date(2026, 9, 25, 2, 29);
+		const secondPass = new Date(firstPass.getTime() + 60 * 60 * 1000); // 02:29 again
+		expect(secondPass.getHours()).toBe(2);
+		expect(dayFor(firstPass, '02:30')).toBe('2026-10-24');
+		expect(dayFor(secondPass, '02:30')).toBe('2026-10-24');
+		expect(dayFor(new Date(2026, 9, 25, 2, 30), '02:30')).toBe('2026-10-25');
 	});
 	it('falls back to midnight for an invalid start', () => {
 		expect(dayFor(new Date(2026, 10, 25, 0, 10), 'junk')).toBe('2026-11-25');

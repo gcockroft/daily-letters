@@ -33,8 +33,17 @@ export function dayFor(now: Date, dayStartTime: string): string {
 	const d = minutes < parseDayStart(dayStartTime)
 		? new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
 		: now;
+	return formatDate(d);
+}
+
+function formatDate(d: Date): string {
 	const pad = (n: number) => String(n).padStart(2, '0');
 	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function previousDate(date: string): string {
+	const [y, m, d] = date.split('-').map(Number);
+	return formatDate(new Date(y!, m! - 1, d! - 1));
 }
 
 export class DayTracker {
@@ -50,12 +59,14 @@ export class DayTracker {
 	}
 
 	/**
-	 * If `today` is a later date, start an empty day and return the finished one.
-	 * An earlier date (the day start moved later after midnight) is ignored, so a
-	 * logged day is never reopened empty and overwritten.
+	 * If `today` is a different date, start an empty day and return the finished one.
+	 * Going back exactly one day is ignored: that is what moving the day start
+	 * later after midnight does, and following it would reopen yesterday empty and
+	 * overwrite its log row. Anything further back means the saved date was wrong
+	 * (e.g. the clock had jumped ahead), so tracking moves on rather than freezing.
 	 */
 	rollover(today: string): DayData | null {
-		if (today <= this.day.date) return null;
+		if (today === this.day.date || today === previousDate(this.day.date)) return null;
 		const finished = this.day;
 		this.day = emptyDay(today);
 		return finished;

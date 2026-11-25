@@ -104,7 +104,7 @@ describe('DayTracker', () => {
 		t.onEdit('a.md', 1);
 		t.onEdit('a.md', 3);
 		expect(t.rollover('2026-10-21')).toBeNull();
-		expect(t.day).toEqual({ date: '2026-10-22', words: 2, files: ['a.md'] });
+		expect(t.day).toEqual({ date: '2026-10-22', words: 2, files: ['a.md'], logged: 0 });
 	});
 	it('moves to an earlier date more than a day back (clock was wrong)', () => {
 		const t = new DayTracker(emptyDay('2036-01-01'));
